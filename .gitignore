@@ -3,3 +3,5 @@ verdict-*.err
 /tmp/swarm/
 *.log
 .DS_Store
+node_modules/
+audit-swarm/

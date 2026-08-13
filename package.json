@@ -1,0 +1,43 @@
+{
+  "name": "audit-swarm",
+  "version": "1.0.0",
+  "description": "Harness-agnostic multi-agent swarm to audit code, verify research, or stress-test a plan.",
+  "bin": {
+    "audit-swarm": "bin/audit-swarm.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "assets/",
+    "SKILL.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node -e \"try{require('fs').chmodSync(require('path').join(__dirname,'scripts','run-swarm.sh'),0o755)}catch(e){}\""
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "agent",
+    "multi-agent",
+    "swarm",
+    "audit",
+    "verification",
+    "red-team",
+    "llm",
+    "research",
+    "planning"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nikdumroese/audit-swarm.git"
+  },
+  "homepage": "https://github.com/nikdumroese/audit-swarm#readme",
+  "bugs": {
+    "url": "https://github.com/nikdumroese/audit-swarm/issues"
+  },
+  "author": "nikdumroese",
+  "license": "MIT"
+}

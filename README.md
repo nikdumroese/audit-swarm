@@ -125,11 +125,32 @@ small.
 
 ## Install
 
-Clone the repository into your skills directory so an agent can discover and update it:
+You have three ways to run it.
+
+**Run with npx, no install (recommended).** This runs the current version straight from GitHub. You
+need Node.js, plus `bash`, `python3`, and one agent CLI on your PATH.
+
+```bash
+npx github:nikdumroese/audit-swarm init                 # copy example roles/claims into ./audit-swarm
+npx github:nikdumroese/audit-swarm run \
+  --mode audit --agent pi \
+  --claims ./audit-swarm/claims.md \
+  --roles  ./audit-swarm/roles.audit.tsv \
+  --repo   "$PWD" --out /tmp/swarm
+npx github:nikdumroese/audit-swarm aggregate --out /tmp/swarm --repo "$PWD"
+```
+
+The `npx` command name maps to the scripts: `run` and `debate` call `run-swarm.sh`; `aggregate` calls
+`aggregate.py`; `init` copies the example files; `assets` prints the packaged assets path.
+
+**Clone as a skill.** Put it in your skills directory so an agent can discover and update it:
 
 ```bash
 git clone https://github.com/nikdumroese/audit-swarm ~/.agents/skills/audit-swarm
 ```
+
+**Call the scripts directly.** After cloning, run `scripts/run-swarm.sh` and `scripts/aggregate.py`
+as shown in the [Quickstart](#quickstart).
 
 ## Files
 
