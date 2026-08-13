@@ -44,21 +44,23 @@ change. Pick the mode with `--mode`.
 ## Running inside an agent harness (pi / Claude Code / Codex)
 
 Inside another agent, this runs as a captured, non-interactive subprocess — **not a TTY** — so the
-in-place dashboard does not apply. Two things make progress visible there:
+in-place dashboard does not apply. Instead you get a **designed, append-only stream** that reads well
+as monospace text: a boxed banner, per-round rules, one aligned line per agent
+(`▸ edge  ✓0 ✗0 •0  ✨n`), a discovery feed, and a consensus grid + result box drawn with Unicode
+symbols (`✓` proven, `✗` refuted, `•` open, `·` pending). It works three ways:
 
-1. **Line-flushed event stream on stdout.** Round headers, each agent's verdicts, `✨` discoveries,
-   promotions, and the consensus table are flushed per line. A harness that streams tool stdout shows
-   them as they happen.
-2. **A tailable progress log.** Every run appends plain-text events to `<out>/progress.log` (override
-   with `--progress-file`). For harnesses that only surface tool output at completion, run the loop
-   in the background and watch the log:
+1. **Line-flushed stdout.** Every event is flushed per line, so a harness that streams tool output
+   (pi streams bash output as it arrives) shows them live.
+2. **Tailable progress log.** Every run appends to `<out>/progress.log` (`--progress-file` to
+   override). Run the loop in the background and `tail -f` it, or poll it between agent turns:
    ```bash
    audit-swarm loop --claims ... --roles ... --repo ... --out /tmp/swarm-loop &
-   tail -f /tmp/swarm-loop/progress.log        # or: poll it between agent turns
+   tail -f /tmp/swarm-loop/progress.log
    ```
-   The orchestrator prints the exact `tail -f` path as its first line.
+3. **Colour is opt-in.** Output is monochrome-clean by default (no risk of raw escape codes). If your
+   harness renders ANSI, add `--color always`; `--color never` forces plain.
 
-The colour dashboard is for a real terminal; use `--no-live` to force the plain stream anywhere.
+The repaint dashboard is for a real terminal; `--no-live` forces the plain stream anywhere.
 
 ## Hard rules (do not skip)
 
