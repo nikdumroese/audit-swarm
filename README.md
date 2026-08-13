@@ -84,8 +84,11 @@ artifacts. In a terminal it shows a **live dashboard** that repaints in place: a
 timer, an agents row (`✔ done` / spinner while running), a per-claim grid where a coloured dot lands
 for each agent's vote (green = proven, red = refuted, yellow = unresolved, dim `·` = pending), live
 totals, and the latest `✨` discovery. When output is not a terminal (piped/CI) or with `--no-live`, it
-falls back to a plain append-only stream. `--max-rounds` bounds total rounds; `--max-discovery`
-bounds how many generations of new claims are promoted. `aggregate` exits non-zero while any split
+The colour dashboard is for a real terminal. **Inside an agent harness (pi / Claude Code / Codex)**
+the run is a captured non-TTY subprocess, so instead: stdout events are line-flushed (a streaming
+harness shows them live), and every run appends a plain-text log to `<out>/progress.log`
+(`--progress-file` to override). To watch live, run the loop in the background and `tail -f` that log
+— its path is printed as the first line. `--max-rounds` bounds total rounds; `--max-discovery` bounds how many generations of new claims are promoted. `aggregate` exits non-zero while any split
 verdict or broken citation remains, so you can use it to gate a script or a CI step.
 
 ## Choose your agent CLI

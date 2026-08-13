@@ -21,8 +21,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RUN_SWARM = os.path.join(HERE, "run-swarm.sh")
 CLAIM_RE = re.compile(r"^\s*([A-Z]{1,3}\d+)\.\s+(.*)")
 
-# ---- colour -------------------------------------------------------------------------------------
+# ---- colour + output ----------------------------------------------------------------------------
 TTY = sys.stdout.isatty()
+ANSI_RE = re.compile(r"\033\[[0-9;?]*m")
 def c(s, code): return f"\033[{code}m{s}\033[0m" if TTY else s
 GREEN, RED, YEL, DIM, CYAN, BOLD = "32", "31", "33", "2", "36", "1"
 def vcolor(v):
@@ -31,6 +32,14 @@ def vcolor(v):
     if v in ("N/A", "-", "?"): return DIM
     return YEL
 def paint(v): return c(v, vcolor(v))
+
+_PROG = None                 # progress-log file handle (plain text, tailable)
+def emit(msg="", stdout=True):
+    """Emit a semantic event: flushed to stdout (unless suppressed) and to the progress log."""
+    if stdout:
+        print(msg, flush=True)
+    if _PROG is not None:
+        _PROG.write(ANSI_RE.sub("", msg) + "\n"); _PROG.flush()
 
 # ---- dedup --------------------------------------------------------------------------------------
 def norm(s): return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
@@ -101,7 +110,9 @@ def run_round(args, rnd, active, text, prior, repos, index):
     os.makedirs(rdir, exist_ok=True)
     write_round_file(os.path.join(rdir, "claims.md"), args.mode, active, text, prior)
 
-    print(c(f"\n▶ round {rnd}: {len(active)} active claim(s)", BOLD))
+    print(c(f"\n▶ round {rnd}: {len(active)} active claim(s)", BOLD), flush=True)
+    if _PROG is not None:
+        _PROG.write(f"\n== round {rnd}: {len(active)} active ==\n"); _PROG.flush()
     if args.dry_run:
         print(c(f"  [dry-run] reading existing verdicts in {rdir}", DIM))
     else:
@@ -144,18 +155,17 @@ def _stream(proc, rdir, repos, index):
         time.sleep(0.6)
 
 def _print_agent(role, data, repos, index):
-    print(c(f"  ✔ {role}", BOLD))
+    emit(c(f"  ✔ {role}", BOLD))
     for v in data.get("verdicts", []):
         vd = v.get("verdict", "?")
         if vd in ("N/A", "-", "?"):
             continue
         ok, _ = agg.cite_ok(v.get("evidence", ""), repos, index)
-        print(f"      {v.get('id','?'):5} {paint(vd):20} {c('✓', GREEN) if ok else c('✗cite', RED)}")
+        emit(f"      {v.get('id','?'):5} {paint(vd):20} {c('✓', GREEN) if ok else c('✗cite', RED)}")
     for m in data.get("missed", []):
-        print("      " + c(f"✨ discovered: {m.get('summary','')[:100]}", CYAN))
+        emit("      " + c(f"✨ discovered: {m.get('summary','')[:100]}", CYAN))
 
 # ---- live in-TTY dashboard (ANSI frame redraw) --------------------------------------------------
-ANSI_RE = re.compile(r"\033\[[0-9;?]*m")
 SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 def _vlen(s): return len(ANSI_RE.sub("", s))
 def _vtrunc(s, w):
@@ -202,9 +212,11 @@ def _dashboard(proc, rdir, rnd, active, expected, repos, index):
     finally:
         sys.stdout.write("\033[?25h")       # restore cursor
         sys.stdout.flush()
-    # persist discoveries into scrollback (frame is ephemeral)
+    # persist agent tallies + discoveries into scrollback and the progress log
+    for role, n in done.items():
+        emit(c(f"  ✔ {role} ({n} verdicts)", BOLD), stdout=False)
     for role, s in discoveries:
-        print("  " + c(f"✨ [{role}] {s[:110]}", CYAN))
+        emit("  " + c(f"✨ [{role}] {s[:110]}", CYAN))
 
 def _frame(rnd, active, expected, votes, done, discoveries, start, tick, cols):
     el = int(time.time() - start); sp = SPIN[tick % len(SPIN)]
@@ -252,14 +264,12 @@ def _paint(lines, prev_n):
 
 # ---- report -------------------------------------------------------------------------------------
 def render_table(order, status, prev):
-    print(c("\n── consensus ──", BOLD))
+    emit(c("\n── consensus ──", BOLD))
     for cid in order:
         st = status[cid]
         base = st.split()[0] if st.startswith("SPLIT") else st
-        arrow = ""
-        if prev.get(cid) and prev[cid] != st:
-            arrow = c(f"   ({prev[cid]} → {st})", DIM)
-        print(f"  {cid:5} {paint(base):20}{arrow}")
+        arrow = c(f"   ({prev[cid]} → {st})", DIM) if prev.get(cid) and prev[cid] != st else ""
+        emit(f"  {cid:5} {paint(base):20}{arrow}")
 
 def main():
     ap = argparse.ArgumentParser()
@@ -272,8 +282,21 @@ def main():
     ap.add_argument("--max-discovery", type=int, default=2)
     ap.add_argument("--live", dest="live", action="store_true", default=True)
     ap.add_argument("--no-live", dest="live", action="store_false")
+    ap.add_argument("--progress-file", default="",
+                    help="append a plain-text progress log here (default <out>/progress.log); tail it "
+                         "to watch a run live inside an agent harness")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+
+    global _PROG
+    try:
+        sys.stdout.reconfigure(line_buffering=True)   # flush every line in pipes/harnesses
+    except Exception:
+        pass
+    os.makedirs(args.out, exist_ok=True)
+    prog_path = args.progress_file or os.path.join(args.out, "progress.log")
+    _PROG = open(prog_path, "a", encoding="utf-8")
+    emit(c(f"audit-swarm loop · live progress → tail -f {prog_path}", DIM))
 
     repos = [p for p in args.repo.split(",") if p]
     index = agg.build_index(repos)
@@ -312,15 +335,15 @@ def main():
                 order.append(nid); status[nid] = "PENDING"; new.append(nid)
             if new:
                 disc_gen += 1
-                print(c(f"  → promoted {len(new)} discovery→claim: {', '.join(new)}", CYAN))
+                emit(c(f"  → promoted {len(new)} discovery→claim: {', '.join(new)}", CYAN))
 
         render_table(order, status, prev)
         unresolved = [c for c in order if status[c] not in term]
         rnd += 1
         if not unresolved and not new:
-            print(c(f"\n✅ converged after {rnd} round(s)", GREEN)); break
+            emit(c(f"\n✅ converged after {rnd} round(s)", GREEN)); break
     else:
-        print(c(f"\n⏹ stopped at max-rounds ({args.max_rounds})", YEL))
+        emit(c(f"\n⏹ stopped at max-rounds ({args.max_rounds})", YEL))
 
     proven  = [c for c in order if status[c] == proven_v]
     refuted = [c for c in order if status[c] == "REFUTED"]
@@ -335,8 +358,10 @@ def main():
             for cid in ids:
                 fh.write(f"- **{cid}** [{status[cid]}] {text[cid]}\n")
             fh.write("\n")
-    print(c(f"\nPROVEN {len(proven)}  REFUTED {len(refuted)}  UNRESOLVED {len(unresolved)}", BOLD))
-    print(f"report → {report}")
+    emit(c(f"\nPROVEN {len(proven)}  REFUTED {len(refuted)}  UNRESOLVED {len(unresolved)}", BOLD))
+    emit(f"report → {report}")
+    if _PROG is not None:
+        _PROG.close()
     sys.exit(0 if not unresolved else 1)
 
 if __name__ == "__main__":

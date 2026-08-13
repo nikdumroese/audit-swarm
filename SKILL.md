@@ -41,6 +41,25 @@ change. Pick the mode with `--mode`.
 - **Orchestrator–worker with artifacts** — workers write verdict files; the orchestrator aggregates
   lightweight references, avoiding context bloat.
 
+## Running inside an agent harness (pi / Claude Code / Codex)
+
+Inside another agent, this runs as a captured, non-interactive subprocess — **not a TTY** — so the
+in-place dashboard does not apply. Two things make progress visible there:
+
+1. **Line-flushed event stream on stdout.** Round headers, each agent's verdicts, `✨` discoveries,
+   promotions, and the consensus table are flushed per line. A harness that streams tool stdout shows
+   them as they happen.
+2. **A tailable progress log.** Every run appends plain-text events to `<out>/progress.log` (override
+   with `--progress-file`). For harnesses that only surface tool output at completion, run the loop
+   in the background and watch the log:
+   ```bash
+   audit-swarm loop --claims ... --roles ... --repo ... --out /tmp/swarm-loop &
+   tail -f /tmp/swarm-loop/progress.log        # or: poll it between agent turns
+   ```
+   The orchestrator prints the exact `tail -f` path as its first line.
+
+The colour dashboard is for a real terminal; use `--no-live` to force the plain stream anywhere.
+
 ## Hard rules (do not skip)
 
 1. **Two rounds minimum, or loop to convergence.** Independent pass, then role-specialized
