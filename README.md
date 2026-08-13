@@ -80,8 +80,12 @@ npx github:nikdumroese/audit-swarm aggregate --out /tmp/swarm --repo "$PWD"
 ```
 
 `loop` writes `orchestrate-report.md` (PROVEN / REFUTED / UNRESOLVED) plus per-round `round-N/`
-artifacts. `aggregate` exits non-zero while any split verdict or broken citation remains, so you can
-use it to gate a script or a CI step.
+artifacts. While it runs it streams a live view: each agent prints its verdicts as it finishes
+(green = proven, red = refuted, yellow = unresolved), `✨` lines for newly discovered problems, and a
+per-round consensus table with `PENDING → CONFIRMED` transitions. Add `--no-live` for plain logs.
+`--max-rounds` bounds total rounds; `--max-discovery` bounds how many generations of new claims are
+promoted (so discovery cannot loop forever). `aggregate` exits non-zero while any split verdict or
+broken citation remains, so you can use it to gate a script or a CI step.
 
 ## Choose your agent CLI
 
