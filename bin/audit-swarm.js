@@ -23,12 +23,17 @@ const ASSETS = path.join(ROOT, 'assets')
 const USAGE = `audit-swarm — multi-agent swarm to audit code, verify research, or stress-test a plan
 
 Usage:
-  audit-swarm run [run-swarm.sh options]      Run the swarm (see options below)
-  audit-swarm debate <ID> [options]           Run one debate round on a split claim ID
-  audit-swarm aggregate [aggregate.py options] Combine verdicts, verify citations, gate on splits
-  audit-swarm init [dir]                       Copy example roles/claims into <dir> (default ./audit-swarm)
-  audit-swarm assets                           Print the packaged assets directory
-  audit-swarm help                             Show this help
+  audit-swarm loop [orchestrate.py options]    Discover + debate until every claim is terminal
+  audit-swarm run [run-swarm.sh options]       Run one round of the swarm
+  audit-swarm debate <ID> [options]            Run one debate round on a split claim ID
+  audit-swarm aggregate [aggregate.py options]  Combine verdicts, verify citations, gate on splits
+  audit-swarm init [dir]                        Copy example roles/claims into <dir> (default ./audit-swarm)
+  audit-swarm assets                            Print the packaged assets directory
+  audit-swarm help                              Show this help
+
+The loop (recommended) drives claims to a terminal verdict and promotes discovered issues:
+  audit-swarm loop --claims F --roles F --repo DIR --out DIR [--mode audit|research|plan]
+    [--agent pi|claude|codex|custom] [--models a,b] [--max-rounds N] [--max-discovery M]
 
 Common run options (forwarded to scripts/run-swarm.sh):
   --mode audit|research|plan     Job type (default audit)
@@ -74,6 +79,9 @@ function initInto(dir) {
 
 const [sub, ...rest] = process.argv.slice(2)
 switch (sub) {
+  case 'loop':
+    run('python3', [path.join(SCRIPTS, 'orchestrate.py'), ...rest])
+    break
   case 'run':
     run('bash', [path.join(SCRIPTS, 'run-swarm.sh'), ...rest])
     break

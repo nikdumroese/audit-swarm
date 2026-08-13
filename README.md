@@ -13,8 +13,9 @@
 
 audit-swarm runs several AI agents in parallel to check the same work, then combines their verdicts
 mechanically. You give it a set of claims (or questions) and a set of roles. It runs the agents,
-verifies every citation they produce, tallies where they agree, and stops you before you trust a
-result the agents disagree on.
+verifies every citation they produce, tallies where they agree, and **loops**: it debates the claims
+the agents disagree on, and **promotes new problems the agents discover** into fresh claims, until
+every claim is proven or refuted (or a round cap is reached).
 
 Use it to do one of three jobs:
 
@@ -62,24 +63,25 @@ Read these before you run the commands below.
 # 1. Write the claims or questions (see assets/claims.example.md).
 # 2. Pick the roles for the job (assets/roles.audit.tsv, roles.research.tsv, or roles.plan.tsv).
 
-# 3. Run the swarm. --agent selects the CLI: pi | claude | codex | custom.
-bash scripts/run-swarm.sh \
+# 3a. RECOMMENDED: loop until every claim is proven or refuted, promoting discovered issues.
+npx github:nikdumroese/audit-swarm loop \
   --mode audit --agent pi \
-  --claims /tmp/swarm/claims.md \
-  --roles  assets/roles.audit.tsv \
-  --repo   "$PWD" --out /tmp/swarm \
-  --models "model-a,model-b"        # optional: assign roles across models to reduce shared errors
+  --claims ./audit-swarm/claims.md \
+  --roles  ./audit-swarm/roles.audit.tsv \
+  --repo   "$PWD" --out /tmp/swarm-loop \
+  --models "model-a,model-b" \
+  --max-rounds 5 --max-discovery 2
 
-# 4. Combine the verdicts, verify citations, and gate on disagreement.
-#    --repo accepts a comma-separated list of roots for cross-repo work.
-python3 scripts/aggregate.py --out /tmp/swarm --repo "$PWD"
-
-# 5. If step 4 reports a SPLIT, run one debate round on that claim, then hand-verify.
-bash scripts/run-swarm.sh --debate C3 --mode audit --claims ... --roles ... --repo ... --out ...
+# 3b. OR run one round at a time and combine the verdicts yourself.
+npx github:nikdumroese/audit-swarm run --mode audit --agent pi \
+  --claims ./audit-swarm/claims.md --roles ./audit-swarm/roles.audit.tsv \
+  --repo "$PWD" --out /tmp/swarm --discover
+npx github:nikdumroese/audit-swarm aggregate --out /tmp/swarm --repo "$PWD"
 ```
 
-`aggregate.py` exits with a non-zero status while any split verdict or broken citation remains, so you
-can use it to gate a script or a CI step.
+`loop` writes `orchestrate-report.md` (PROVEN / REFUTED / UNRESOLVED) plus per-round `round-N/`
+artifacts. `aggregate` exits non-zero while any split verdict or broken citation remains, so you can
+use it to gate a script or a CI step.
 
 ## Choose your agent CLI
 
@@ -157,7 +159,8 @@ as shown in the [Quickstart](#quickstart).
 | Path | What it is |
 |---|---|
 | `SKILL.md` | The skill manifest, usable directly by pi or Claude Skills |
-| `scripts/run-swarm.sh` | Starts the role agents on any CLI; writes `verdict-<role>.md` |
+| `scripts/orchestrate.py` | The loop: discover + debate until every claim is terminal; writes the report |
+| `scripts/run-swarm.sh` | Runs one round of role agents on any CLI; writes `verdict-<role>.md` |
 | `scripts/aggregate.py` | Reads verdicts, verifies citations, tallies consensus, gates on splits |
 | `assets/roles.*.tsv` | Example role sets for audit, research, and plan |
 | `assets/claims.example.md` | Template for the claims or questions file |

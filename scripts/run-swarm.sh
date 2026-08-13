@@ -20,7 +20,7 @@ set -u
 
 CLAIMS="" ROLES="" REPO="$PWD" OUT="/tmp/swarm" MODE="audit"
 AGENT="${AGENT:-pi}" AGENT_CMD="${AGENT_CMD:-}"
-MODELS="" PROVIDER="" THINKING="high" DEBATE=""
+MODELS="" PROVIDER="" THINKING="high" DEBATE="" DISCOVER=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --claims) CLAIMS="$2"; shift 2;;
@@ -33,6 +33,7 @@ while [ $# -gt 0 ]; do
     --provider) PROVIDER="$2"; shift 2;;
     --thinking) THINKING="$2"; shift 2;;
     --debate) DEBATE="$2"; shift 2;;
+    --discover) DISCOVER=1; shift 1;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
@@ -88,12 +89,17 @@ run_agent(){ # $1 prompt  $2 model  -> writes agent's final text to stdout
 }
 
 CLAIMS_TXT="$(cat "$CLAIMS")"
+DISCOVER_TXT=""
+[ -n "$DISCOVER" ] && DISCOVER_TXT='
+DISCOVERY MANDATE: also actively search for problems NOT listed in the claims. Put each new problem
+in the "missed" array with a precise, checkable citation. Discovery is a first-class goal this round
+— do not restrict yourself to the listed claims.'
 launch(){ # $1 role  $2 desc  $3 idx  $4 extra
   local role="$1" desc="$2" idx="$3" extra="$4" model; model="$(model_for "$idx")"
   local prompt="You are a read-only $MODE reviewer. Do NOT edit files. Context root: $REPO.
 
 ROLE: $desc
-$extra
+$extra$DISCOVER_TXT
 
 CLAIMS / QUESTIONS UNDER REVIEW:
 $CLAIMS_TXT
