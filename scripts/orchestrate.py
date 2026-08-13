@@ -10,7 +10,7 @@ Each round:
   4. Freeze claims that reached a terminal verdict; keep debating the rest.
 Stop when every claim is terminal and no new claims were discovered, or at --max-rounds.
 """
-import argparse, os, re, sys, time, json, glob, subprocess
+import argparse, os, re, sys, time, json, glob, shutil, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import aggregate as agg
 
@@ -88,7 +88,14 @@ def parse_file(path):
     except Exception:
         return None
 
-# ---- one round, with live stream ----------------------------------------------------------------
+def roles_of(path):
+    out = []
+    for line in open(path, encoding="utf-8"):
+        if line.strip() and not line.lstrip().startswith("#"):
+            out.append(line.split("\t", 1)[0].strip())
+    return out
+
+# ---- one round, with live stream or dashboard ---------------------------------------------------
 def run_round(args, rnd, active, text, prior, repos, index):
     rdir = os.path.join(args.out, f"round-{rnd}")
     os.makedirs(rdir, exist_ok=True)
@@ -104,61 +111,144 @@ def run_round(args, rnd, active, text, prior, repos, index):
         if args.models:   cmd += ["--models", args.models]
         if args.provider: cmd += ["--provider", args.provider]
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        _monitor(proc, rdir, repos, index, args.live)
+        expected = roles_of(args.roles)
+        if args.live and TTY:
+            _dashboard(proc, rdir, rnd, active, expected, repos, index)
+        else:
+            _stream(proc, rdir, repos, index)
 
     rows, missed, roles = agg.load_round(rdir, repos, index)
     return agg.consensus(rows, roles), rows, missed, roles
 
-def _monitor(proc, rdir, repos, index, live):
-    """Poll the round dir; stream each agent's verdicts as its json block completes."""
+# ---- plain streaming monitor (non-TTY / --no-live) ----------------------------------------------
+def _stream(proc, rdir, repos, index):
     printed = set()
-    started = time.time()
     while True:
-        files = sorted(glob.glob(os.path.join(rdir, "verdict-*.md")))
-        running = []
-        for f in files:
+        for f in sorted(glob.glob(os.path.join(rdir, "verdict-*.md"))):
             role = os.path.basename(f)[len("verdict-"):-3]
             if role in printed:
                 continue
             data = parse_file(f)
             if data is None:
-                sz = os.path.getsize(f)
-                running.append(f"{role} {sz//1024 or 1}kb")
                 continue
-            printed.add(role)
-            _print_agent(role, data, repos, index)
-        if live and TTY and proc.poll() is None and running:
-            el = int(time.time() - started)
-            sys.stdout.write("\r\033[K" + c(f"  ⏳ {el}s · " + " · ".join(running), DIM)); sys.stdout.flush()
+            printed.add(role); _print_agent(role, data, repos, index)
         if proc.poll() is not None:
-            # process ended: do a final sweep for any late files
             for f in sorted(glob.glob(os.path.join(rdir, "verdict-*.md"))):
                 role = os.path.basename(f)[len("verdict-"):-3]
                 if role in printed:
                     continue
-                data = parse_file(f)
-                printed.add(role)
+                printed.add(role); data = parse_file(f)
                 if data: _print_agent(role, data, repos, index)
                 else: print(c(f"  ✗ {role}: no verdict block", RED))
             break
-        if time.time() - started > 3600:
-            print(c("  ! monitor timeout", RED)); break
         time.sleep(0.6)
-    if TTY:
-        sys.stdout.write("\r\033[K")
 
 def _print_agent(role, data, repos, index):
-    if TTY: sys.stdout.write("\r\033[K")
     print(c(f"  ✔ {role}", BOLD))
     for v in data.get("verdicts", []):
         vd = v.get("verdict", "?")
         if vd in ("N/A", "-", "?"):
             continue
         ok, _ = agg.cite_ok(v.get("evidence", ""), repos, index)
-        mark = c("✓", GREEN) if ok else c("✗cite", RED)
-        print(f"      {v.get('id','?'):5} {paint(vd):20} {mark}")
+        print(f"      {v.get('id','?'):5} {paint(vd):20} {c('✓', GREEN) if ok else c('✗cite', RED)}")
     for m in data.get("missed", []):
         print("      " + c(f"✨ discovered: {m.get('summary','')[:100]}", CYAN))
+
+# ---- live in-TTY dashboard (ANSI frame redraw) --------------------------------------------------
+ANSI_RE = re.compile(r"\033\[[0-9;?]*m")
+SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+def _vlen(s): return len(ANSI_RE.sub("", s))
+def _vtrunc(s, w):
+    if _vlen(s) <= w: return s
+    return ANSI_RE.sub("", s)[:max(0, w - 1)] + "…"
+
+def _dashboard(proc, rdir, rnd, active, expected, repos, index):
+    votes = {cid: [] for cid in active}     # cid -> [(role, verdict, ok)]
+    done, discoveries = {}, []              # role -> verdict count ; list of summaries
+    seen = set()
+    cols = max(40, shutil.get_terminal_size((100, 30)).columns)
+    start = time.time(); prev_n = 0; tick = 0; ended_at = None
+    sys.stdout.write("\033[?25l")           # hide cursor
+    try:
+        while True:
+            tick += 1
+            nfiles = len(glob.glob(os.path.join(rdir, "verdict-*.md")))
+            for f in sorted(glob.glob(os.path.join(rdir, "verdict-*.md"))):
+                role = os.path.basename(f)[len("verdict-"):-3]
+                if role in seen:
+                    continue
+                data = parse_file(f)
+                if data is None:
+                    continue
+                seen.add(role); n = 0
+                for v in data.get("verdicts", []):
+                    vd = v.get("verdict", "?")
+                    if vd in ("N/A", "-", "?"):
+                        continue
+                    ok, _ = agg.cite_ok(v.get("evidence", ""), repos, index)
+                    if v.get("id") in votes:
+                        votes[v["id"]].append((role, vd, ok)); n += 1
+                for m in data.get("missed", []):
+                    discoveries.append((role, m.get("summary", "")))
+                done[role] = n
+            prev_n = _paint(_frame(rnd, active, expected, votes, done, discoveries,
+                                   start, tick, cols), prev_n)
+            if proc.poll() is not None:
+                ended_at = ended_at or time.time()
+                # exit once every file is parsed, or after a short grace period post-exit
+                if len(seen) >= nfiles or time.time() - ended_at > 4:
+                    break
+            time.sleep(0.5)
+    finally:
+        sys.stdout.write("\033[?25h")       # restore cursor
+        sys.stdout.flush()
+    # persist discoveries into scrollback (frame is ephemeral)
+    for role, s in discoveries:
+        print("  " + c(f"✨ [{role}] {s[:110]}", CYAN))
+
+def _frame(rnd, active, expected, votes, done, discoveries, start, tick, cols):
+    el = int(time.time() - start); sp = SPIN[tick % len(SPIN)]
+    L = [c(f"audit-swarm · round {rnd} · {el//60:02d}:{el%60:02d}", BOLD)]
+    # agents line
+    ag = []
+    for r in expected:
+        if r in done: ag.append(c(f"✔ {r}({done[r]})", GREEN))
+        else:         ag.append(c(f"{sp} {r}", YEL))
+    L.append("agents: " + "  ".join(ag))
+    # claims grid: one glyph per completed vote (green=proven/red=refuted/yellow=other)
+    L.append(c("claims: ", DIM) + c("● proven ", GREEN) + c("● refuted ", RED) + c("● unresolved ", YEL) + c("· pending", DIM))
+    glyph = {}
+    for cid in active:
+        g = ""
+        for _, vd, ok in votes[cid]:
+            col = GREEN if vd in ("CONFIRMED", "SUPPORTED", "SOUND") else RED if vd == "REFUTED" else YEL
+            g += c("●", col)
+        if not g: g = c("·", DIM)
+        glyph[cid] = f"{cid} {g}"
+    per = max(1, cols // 16)
+    row = []
+    for i, cid in enumerate(active):
+        row.append(glyph[cid].ljust(16 + (len(glyph[cid]) - _vlen(glyph[cid]))))
+        if len(row) == per:
+            L.append("  " + "".join(row)); row = []
+    if row: L.append("  " + "".join(row))
+    # tallies
+    prov = sum(1 for cid in active if votes[cid] and all(v in ("CONFIRMED","SUPPORTED","SOUND") for _,v,_ in votes[cid]))
+    refu = sum(1 for cid in active if votes[cid] and all(v == "REFUTED" for _,v,_ in votes[cid]))
+    L.append(f"totals: {c(str(prov)+' proven',GREEN)}  {c(str(refu)+' refuted',RED)}  "
+             f"{c(str(len(discoveries))+' discovered',CYAN)}")
+    if discoveries:
+        L.append(c("latest ✨ " + discoveries[-1][1][:cols - 12], DIM))
+    return [_vtrunc(x, cols) for x in L]
+
+def _paint(lines, prev_n):
+    out = []
+    if prev_n:
+        out.append(f"\033[{prev_n}A")
+    out.append("\033[J")
+    out.append("\n".join(lines) + "\n")
+    sys.stdout.write("".join(out)); sys.stdout.flush()
+    return len(lines)
 
 # ---- report -------------------------------------------------------------------------------------
 def render_table(order, status, prev):
