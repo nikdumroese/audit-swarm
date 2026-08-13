@@ -1,0 +1,5 @@
+verdict-*.md
+verdict-*.err
+/tmp/swarm/
+*.log
+.DS_Store

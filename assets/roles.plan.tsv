@@ -1,0 +1,5 @@
+# plan: role<TAB>description. Keep a `redteam` premortem row.
+feasibility	Feasibility reviewer. Assess whether each step is executable as written with the stated resources/skills/time. Cite the plan/code that supports or undermines each step.
+dependencies	Dependency & sequencing reviewer. Identify hard prerequisites, ordering constraints, and cross-team/service dependencies. Flag anything BLOCKED by an unmet dependency.
+risk	Cost & risk reviewer. Surface material risks, cost blow-ups, and reversibility. Rate each step and state the specific risk, not a generic caution.
+redteam	Premortem red-team. Assume the plan FAILED. Explain the most likely failure modes, the assumptions that break, and the risks/alternatives the plan OMITS.

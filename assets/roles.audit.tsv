@@ -1,0 +1,5 @@
+# edit/verify: role<TAB>description. Keep a `redteam` row. Partition the surface area.
+edge	AWS/edge & infra verifier. Focus on redirects, CDN, lambda, terraform. Verify claims scoped to infrastructure and settle runtime-only questions as far as code/config allows.
+client	Client-side verifier. Read the app code paths named in the claims; verify each against current code and correct any wrong line references.
+receiver	Downstream/consumer verifier. Read the code that receives/consumes the output; confirm what is mapped vs dropped end-to-end.
+redteam	Adversarial red-team. Assume the audit is WRONG. For every claim, try to REFUTE it from code (find the line that makes the claimed problem not happen). Separately hunt for issues the claim set MISSES entirely.

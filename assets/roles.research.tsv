@@ -1,0 +1,5 @@
+# research: role<TAB>description. Keep a `redteam`/skeptic row.
+primary	Primary-source researcher. Find and cite primary sources (papers, official docs, standards, source code). Prefer authoritative URLs; quote the load-bearing sentence.
+secondary	Secondary-source researcher. Find reputable syntheses, benchmarks, and practitioner reports. Note publication date and possible bias.
+skeptic	Skeptic. For each claim, look specifically for disconfirming evidence and stronger counter-explanations. Flag anything that rests on a single weak source.
+redteam	Adversarial red-team. Assume the claim set is hallucinated. Try to REFUTE each claim with a citable source, and list claims/counter-arguments the set is MISSING.
